@@ -1,0 +1,436 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Engineering Downtime Dashboard</title>
+<style>
+  :root{ --bg:#0b132b; --panel:#1c2541; --accent:#3a506b; --ok:#2ecc71; --down:#e74c3c; --warn:#f1c40f; --text:#ecf0f1; --muted:#cfd7df; }
+  html,body{height:100%;}
+  body{font-family:Segoe UI, Roboto, Arial, sans-serif;background:var(--bg);color:var(--text);margin:0;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;background:linear-gradient(90deg,var(--panel),var(--accent));}
+  header h1{margin:0;font-size:20px;}
+  header .stamp{font-size:12px;color:var(--muted);}  
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px;padding:12px;}
+  .card{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 2px 6px rgba(0,0,0,.35);} 
+  .card h2{margin:0 0 8px;font-size:16px;color:var(--muted);} 
+  .kpi{display:flex;align-items:center;gap:12px}
+  .kpi .value{font-size:28px;font-weight:700}
+  .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+  .equip{background:#111a36;border-radius:16px;padding:10px;position:relative;overflow:hidden;border:1px solid #22315f}
+  .equip .id{font-weight:700;}
+  .equip .type{font-size:12px;color:var(--muted)}
+  .equip .status{margin-top:6px;font-size:12px}
+  .equip .status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .equip.production{border-color:#1a6c3d}
+  .equip.breakdown{border-color:#6c1a1a;animation:blink .9s infinite}
+  @keyframes blink{0%{box-shadow:0 0 0 rgba(231,76,60,.0)}50%{box-shadow:0 0 12px rgba(231,76,60,.6)}100%{box-shadow:0 0 0 rgba(231,76,60,.0)}}
+  .svg-wrap{height:60px;margin-top:6px}
+  .truck path.wheel{transform-origin:center;animation:spin 1.2s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .truck{animation:drive 6s linear infinite}
+  @keyframes drive{0%{transform:translateX(-10px)}50%{transform:translateX(8px)}100%{transform:translateX(-10px)}}
+  .broken{animation:none;filter:hue-rotate(320deg) saturate(1.6)}
+  form{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+  form input,form select,form button{background:#102047;color:var(--text);border:1px solid #284a86;border-radius:8px;padding:8px;font-size:12px}
+  form button{cursor:pointer;background:#1a3f7a}
+  form button.primary{background:#2b7a78}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border-bottom:1px solid #2a3d66;font-size:12px}
+  th{position:sticky;top:0;background:#0f1b3f;z-index:1}
+  tbody tr.ongoing td.duration{color:var(--warn)}
+  .tag{padding:2px 6px;border-radius:999px;font-size:11px;border:1px solid #345}
+  .tag.fitter{background:rgba(46,204,113,.15);border-color:#2ecc71}
+  .tag.boilermaker{background:rgba(255,159,67,.15);border-color:#ff9f43}
+  .tag.electrician{background:rgba(52,152,219,.15);border-color:#3498db}
+  .tag.hydraulic{background:rgba(231,76,60,.15);border-color:#e74c3c}
+  .reason{background:rgba(241,196,15,.12);border-color:#f1c40f}
+  .controls{display:flex;gap:10px;flex-wrap:wrap}
+  .controls button{padding:6px 10px;border-radius:999px;background:#223b72;color:#cfe3ff;border:1px solid #35528f;cursor:pointer}
+  .controls .legend{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .legend .item .square{width:12px;height:12px;border-radius:2px}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .filters label{font-size:12px;color:#cfe3ff}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .chip{font-size:11px;padding:4px 8px;border:1px solid #395081;border-radius:999px;color:#cfe3ff}
+
+/* === Fleet color palette === */
+:root{
+  --dump:#16a085;      /* Dump Truck */
+  --front:#f39c12;     /* Front Loader */
+  --scaler:#9b59b6;    /* Scaler */
+  --hydraulic:#e67e22; /* Hydraulic Drill */
+  --roof:#1abc9c;      /* Roofbolter */
+}
+/* Color ring + header strip per equipment card */
+.equip{border-left:6px solid transparent;}
+.equip.Dump\ Truck{border-left-color:var(--dump);} 
+.equip.Front\ Loader{border-left-color:var(--front);} 
+.equip.Scaler{border-left-color:var(--scaler);} 
+.equip.Hydraulic\ Drill{border-left-color:var(--hydraulic);} 
+.equip.Roofbolter{border-left-color:var(--roof);} 
+/* Badge-style type label color */
+.equip .type{display:inline-block;padding:2px 6px;border-radius:6px;}
+.equip.Dump\ Truck .type{background:color-mix(in srgb, var(--dump) 25%, transparent); color:#bff2e6;}
+.equip.Front\ Loader .type{background:color-mix(in srgb, var(--front) 25%, transparent); color:#ffe7bf;}
+.equip.Scaler .type{background:color-mix(in srgb, var(--scaler) 25%, transparent); color:#ead6ff;}
+.equip.Hydraulic\ Drill .type{background:color-mix(in srgb, var(--hydraulic) 25%, transparent); color:#ffe3c7;}
+.equip.Roofbolter .type{background:color-mix(in srgb, var(--roof) 25%, transparent); color:#c8fff2;}
+/* Legend squares aligned to fleet colors */
+.legend .item[data-fleet="Dump Truck"] .square{background:var(--dump)!important}
+.legend .item[data-fleet="Front Loader"] .square{background:var(--front)!important}
+.legend .item[data-fleet="Scaler"] .square{background:var(--scaler)!important}
+.legend .item[data-fleet="Hydraulic Drill"] .square{background:var(--hydraulic)!important}
+.legend .item[data-fleet="Roofbolter"] .square{background:var(--roof)!important}
+
+
+/* EV badge for electrical Front Loaders */
+.badge{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;font-size:10px;border:1px solid #5dade2;background:rgba(41,128,185,.18);color:#cfe9ff}
+.equip .hdr{display:flex;gap:8px;align-items:center;justify-content:space-between}
+
+</style>
+</head>
+<body>
+<header>
+  <h1>Engineering Downtime Dashboard</h1>
+  <div class="stamp">Live view • <span id="now"></span></div>
+</header>
+
+<div class="grid">
+  <div class="card" style="grid-column: span 12;">
+    <div class="controls">
+      <button id="resetBoard">Reset Board</button>
+      <button id="clearLog">Clear Log</button>
+      <div class="legend">
+        <div class="item"><div class="square" style="background:var(--ok)"></div> Production</div>
+        <div class="item"><div class="square" style="background:var(--down)"></div> Breakdown</div>
+      </div>
+    </div>
+    <div class="filters">
+      <label>Fleet:
+        <select id="fleetFilter">
+          <option value="All">All</option>
+          <option value="Dump Truck">Dump Truck</option>
+          <option value="Front Loader">Front Loader</option>
+          <option value="Scaler">Scaler</option>
+          <option value="Hydraulic Drill">Hydraulic Drill</option>
+          <option value="Roofbolter">Roofbolter</option>
+        </select>
+      </label>
+      <label>Reason:
+        <select id="reasonFilter">
+          <option value="All">All</option>
+          <option value="Mechanical">Mechanical</option>
+          <option value="Electrical">Electrical</option>
+          <option value="Hydraulic">Hydraulic</option>
+          <option value="Structural">Structural</option>
+          <option value="Instrumentation">Instrumentation</option>
+          <option value="Tyre/Wheels">Tyre/Wheels</option>
+          <option value="Operator Error">Operator Error</option>
+          <option value="Planned Maintenance">Planned Maintenance</option>
+          <option value="Safety Hold">Safety Hold</option>
+          <option value="Supply/Parts Delay">Supply/Parts Delay</option>
+          <option value="Environmental">Environmental</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="card" style="grid-column: span 4;">
+    <h2>Equipment Status</h2>
+    <div class="kpi">
+      <div>
+        <div>In Production</div>
+        <div class="value" id="kpiProd">0</div>
+      </div>
+      <div>
+        <div>On Breakdown</div>
+        <div class="value" id="kpiDown">0</div>
+      </div>
+    </div>
+    <canvas id="pie" width="320" height="200"></canvas>
+    <div class="chips" id="reasonChips"></div>
+  </div>
+
+  <div class="card" style="grid-column: span 8;">
+    <h2>Board: Dump Trucks (15) • FL (15) • Scalers (10) • Hydraulic Drills (10) • Roofbolters (10)</h2>
+    <div id="board" class="board"></div>
+  </div>
+
+  <div class="card" style="grid-column: span 12;">
+    <h2>Add Breakdown / Fix</h2>
+    <form id="logForm">
+      <select id="equipSelect" required></select>
+      <select id="artisanType" required>
+        <option value="Fitter">Fitter</option>
+        <option value="Boilermaker">Boilermaker</option>
+        <option value="Electrician (Construction)">Electrician (Construction)</option>
+        <option value="Hydraulic Fitter">Hydraulic Fitter</option>
+      </select>
+      <select id="reasonCode" required>
+        <option value="Mechanical">Mechanical</option>
+        <option value="Electrical">Electrical</option>
+        <option value="Hydraulic">Hydraulic</option>
+        <option value="Structural">Structural</option>
+        <option value="Instrumentation">Instrumentation</option>
+        <option value="Tyre/Wheels">Tyre/Wheels</option>
+        <option value="Operator Error">Operator Error</option>
+        <option value="Planned Maintenance">Planned Maintenance</option>
+        <option value="Safety Hold">Safety Hold</option>
+        <option value="Supply/Parts Delay">Supply/Parts Delay</option>
+        <option value="Environmental">Environmental</option>
+      </select>
+      <input id="artisanName" type="text" placeholder="Artisan name" required/>
+      <input id="startTime" type="datetime-local"/>
+      <input id="fixTime" type="datetime-local"/>
+      <input id="issue" type="text" placeholder="Issue / Notes (optional)"/>
+      <button class="primary" type="submit">Add to Log</button>
+    </form>
+  </div>
+
+  <div class="card" style="grid-column: span 12;">
+    <h2>Live Breakdown Log</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>Artisan Type</th>
+          <th>Name</th>
+          <th>Equipment</th>
+          <th>Fleet</th>
+          <th>Reason</th>
+          <th>Issue</th>
+          <th>Fix Time</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody id="logBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="grid-column: span 12;">
+    <h2>Breakdown Summary by Reason</h2>
+    <div id="reasonSummary"></div>
+  </div>
+</div>
+
+<div class="footer" style="padding:10px;text-align:center;color:var(--muted);font-size:11px">Tip: Use the Fleet and Reason filters to focus the board, log, and summaries.</div>
+
+<script>
+  const NOW = () => new Date();
+  const pad = n => n.toString().padStart(2,'0');
+  const fmtDisp = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function tickClock(){ document.getElementById('now').textContent = fmtDisp(NOW()); }
+  setInterval(tickClock,1000); tickClock();
+
+  // Equipment seed
+  const equipment = [];
+  for(let i=1;i<=15;i++){ equipment.push({id:`DT-${pad(i)}`, type:'Dump Truck', status:'production'}); }
+  for(let i=1;i<=15;i++){ equipment.push({id:`FL-${pad(i)}`, type:'Front Loader', status:'production'}); }
+  for(let i=1;i<=10;i++){ equipment.push({id:`SC-${pad(i)}`, type:'Scaler', status:'production'}); }
+  for(let i=1;i<=10;i++){ equipment.push({id:`HD-${pad(i)}`, type:'Hydraulic Drill', status:'production'}); }
+  for(let i=1;i<=10;i++){ equipment.push({id:`RT-${pad(i)}`, type:'Roofbolter', status:'production'}); }
+
+  const getType = id => (equipment.find(x=>x.id===id)||{}).type || '';
+
+  // Restore equipment state
+  const savedEquip = localStorage.getItem('equipState');
+  if(savedEquip){ try{ JSON.parse(savedEquip).forEach(s => { const e = equipment.find(x => x.id===s.id); if(e){ e.status = s.status; }}); }catch(err){} }
+
+  // Filters
+  const fleetFilter = document.getElementById('fleetFilter');
+  const reasonFilter = document.getElementById('reasonFilter');
+  fleetFilter.addEventListener('change', ()=>{ drawBoard(); renderLog(); updateReasonSummary(); updateChips(); });
+  reasonFilter.addEventListener('change', ()=>{ renderLog(); updateReasonSummary(); updateChips(); });
+
+  function drawBoard(){
+    const board = document.getElementById('board'); board.innerHTML = '';
+    const fleet = fleetFilter.value;
+    equipment.filter(e=> fleet==='All' || e.type===fleet).forEach(e => {
+      const card = document.createElement('div'); card.className = `equip ${e.type} ${e.status}`;
+      card.innerHTML = `
+        <div class="id">${e.id}</div>
+        <div class="type">${e.type}</div>
+        <div class="status"><span class="dot" style="background:${e.status==='production'?'var(--ok)':'var(--down)'}"></span>${e.status==='production'?'Production':'Breakdown'}</div>
+        <div class="svg-wrap">${svg(e)}</div>
+      `;
+      card.addEventListener('click', () => { e.status = (e.status==='production'?'breakdown':'production'); persistEquip(); drawBoard(); updateKPI(); });
+      board.appendChild(card);
+    });
+    const sel = document.getElementById('equipSelect');
+    sel.innerHTML = equipment
+      .filter(e=> fleet==='All' || e.type===fleet)
+      .map(e=>`<option value="${e.id}">${e.id} • ${e.type}</option>`)
+      .join('');
+  }
+
+  function getFleetColor(t){
+  switch(t){
+    case "Dump Truck": return getComputedStyle(document.documentElement).getPropertyValue("--dump");
+    case "Front Loader": return getComputedStyle(document.documentElement).getPropertyValue("--front");
+    case "Scaler": return getComputedStyle(document.documentElement).getPropertyValue("--scaler");
+    case "Hydraulic Drill": return getComputedStyle(document.documentElement).getPropertyValue("--hydraulic");
+    case "Roofbolter": return getComputedStyle(document.documentElement).getPropertyValue("--roof");
+    default: return "#3498db";
+  }
+}
+function svg(e){
+    const broken = e.status==='breakdown';
+    // Simplified icons reused for all fleets; can customise later per fleet
+    if(e.type==='Dump Truck' || e.type==='Front Loader' || e.type==='Hydraulic Drill' || e.type==='Roofbolter'){
+      return `
+      <svg class="${broken?'broken':''} truck" width="160" height="60" viewBox="0 0 160 60"> 
+        <rect x="10" y="20" width="100" height="24" rx="6" fill="${broken?'#e74c3c':getFleetColor(e.type)}"/>
+        <rect x="110" y="28" width="30" height="16" rx="4" fill="#3498db"/>
+        <circle class="wheel" cx="40" cy="48" r="8" fill="#34495e"/>
+        <circle class="wheel" cx="100" cy="48" r="8" fill="#34495e"/>
+        ${broken?'<text x="8" y="16" fill="#fff" font-size="10">⚠ Breakdown</text>':''}
+      </svg>`;
+    }
+    // Scaler icon
+    return `
+    <svg class="${broken?'broken':''} truck" width="160" height="60" viewBox="0 0 160 60"> 
+      <rect x="14" y="22" width="90" height="20" rx="6" fill="${broken?'#e74c3c':getFleetColor(e.type)}"/>
+      <rect x="106" y="16" width="14" height="28" rx="3" fill="#95a5a6"/>
+      <circle class="wheel" cx="40" cy="46" r="7" fill="#34495e"/>
+      <circle class="wheel" cx="90" cy="46" r="7" fill="#34495e"/>
+      ${broken?'<text x="8" y="16" fill="#fff" font-size="10">⚠ Breakdown</text>':''}
+    </svg>`;
+  }
+
+  function persistEquip(){ localStorage.setItem('equipState', JSON.stringify(equipment.map(e=>({id:e.id,status:e.status})))); }
+
+  function updateKPI(){
+    const prod = equipment.filter(e=>e.status==='production').length;
+    const down = equipment.length - prod;
+    document.getElementById('kpiProd').textContent = prod;
+    document.getElementById('kpiDown').textContent = down;
+    drawPie(prod, down);
+  }
+
+  function drawPie(prod,down){
+    const c = document.getElementById('pie'); const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height);
+    const total = prod+down; const cx = c.width/2, cy = c.height/2, r = 70; const start = -Math.PI/2; const prodAng = total? (prod/total)*2*Math.PI : 0;
+    ctx.lineWidth = 22; ctx.strokeStyle = '#17305c'; ctx.beginPath(); ctx.arc(cx,cy,r,0,2*Math.PI); ctx.stroke();
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--ok'); ctx.beginPath(); ctx.arc(cx,cy,r,start,start+prodAng); ctx.stroke();
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--down'); ctx.beginPath(); ctx.arc(cx,cy,r,start+prodAng,start+2*Math.PI); ctx.stroke();
+    ctx.fillStyle = '#cfe3ff'; ctx.font = '12px Segoe UI'; ctx.fillText(`Production: ${prod}`, cx-70, cy+60); ctx.fillText(`Breakdown: ${down}`, cx+5, cy+60);
+  }
+
+  // Log with reason codes
+  const log = [];
+  const savedLog = localStorage.getItem('downLog');
+  if(savedLog){
+    try{
+      const arr = JSON.parse(savedLog);
+      arr.forEach(x=>log.push({ ...x, start:new Date(x.start), fix:x.fix?new Date(x.fix):null }));
+    }catch(e){}
+  }
+
+  function renderLog(){
+    const tbody = document.getElementById('logBody'); tbody.innerHTML = '';
+    const fleet = fleetFilter.value; const reason = reasonFilter.value;
+    const filtered = log.filter(row => {
+      const type = row.equipType || getType(row.equip);
+      const fleetOK = fleet==='All' || type===fleet;
+      const reasonOK = reason==='All' || row.reason===reason;
+      return fleetOK && reasonOK;
+    });
+    filtered.forEach(row=>{
+      const tr = document.createElement('tr'); tr.className = row.fix? '' : 'ongoing';
+      const dur = calcDuration(row.start, row.fix);
+      const type = row.equipType || getType(row.equip);
+      tr.innerHTML = `
+        <td>${fmtDisp(row.start)}</td>
+        <td>${row.artisanType}</td>
+        <td>${row.artisanName}</td>
+        <td>${row.equip}${(['FL0098','FL0099','FL0107','FL0108','FL0113'].includes(row.equip))?' ⚡':''}</td>
+        <td>${type}</td>
+        <td><span class="tag reason">${row.reason}</span></td>
+        <td>${row.issue||''}</td>
+        <td>${row.fix?fmtDisp(row.fix):''}</td>
+        <td class="duration">${dur}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    updateReasonSummary();
+    updateChips();
+    persistLog();
+  }
+
+  function calcDuration(start,fix){
+    const end = fix || NOW(); const ms = Math.max(0, end - start); const sec = Math.floor(ms/1000);
+    const hh = pad(Math.floor(sec/3600)); const mm = pad(Math.floor((sec%3600)/60)); const ss = pad(sec%60);
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  function updateChips(){
+    const chips = document.getElementById('reasonChips'); chips.innerHTML = '';
+    const fleet = fleetFilter.value; const reason = reasonFilter.value;
+    const active = log.filter(r=>!r.fix);
+    const filtered = active.filter(row => {
+      const type = row.equipType || getType(row.equip);
+      const fleetOK = fleet==='All' || type===fleet;
+      const reasonOK = reason==='All' || row.reason===reason;
+      return fleetOK && reasonOK;
+    });
+    const reasons = aggregateReasons(filtered);
+    Object.keys(reasons).forEach(k=>{ const div = document.createElement('div'); div.className='chip'; div.textContent = `${k}: ${reasons[k]}`; chips.appendChild(div); });
+  }
+
+  function aggregateReasons(rows){ const agg = {}; rows.forEach(r=>{ agg[r.reason] = (agg[r.reason]||0)+1; }); return agg; }
+
+  function updateReasonSummary(){
+    const container = document.getElementById('reasonSummary');
+    const fleet = fleetFilter.value; const reason = reasonFilter.value;
+    const filt = rows => rows.filter(row => {
+      const type = row.equipType || getType(row.equip);
+      const fleetOK = fleet==='All' || type===fleet;
+      const reasonOK = reason==='All' || row.reason===reason;
+      return fleetOK && reasonOK;
+    });
+    const active = filt(log.filter(r=>!r.fix));
+    const closed = filt(log.filter(r=>r.fix));
+    const aggActive = aggregateReasons(active), aggClosed = aggregateReasons(closed), aggTotal = aggregateReasons(filt(log));
+    const toTable = (title, aggObj) => {
+      const keys = Object.keys(aggObj).sort((a,b)=>aggObj[b]-aggObj[a]);
+      if(keys.length===0) return `<h3 style="color:#cfd7df">${title}</h3><p style="color:#cfd7df">No data</p>`;
+      const rows = keys.map(k=>`<tr><td>${k}</td><td style="text-align:right">${aggObj[k]}</td></tr>`).join('');
+      return `<h3 style="color:#cfd7df">${title}</h3><table><thead><tr><th>Reason</th><th>Count</th></tr></thead><tbody>${rows}</tbody></table>`;
+    };
+    container.innerHTML = toTable('Active (ongoing)', aggActive) + toTable('Closed (fixed)', aggClosed) + toTable('Filtered total', aggTotal);
+  }
+
+  setInterval(()=>{ renderLog(); }, 1000);
+
+  // Form handler with reason, store equipType
+  document.getElementById('logForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const equip = document.getElementById('equipSelect').value;
+    const artisanType = document.getElementById('artisanType').value;
+    const reason = document.getElementById('reasonCode').value;
+    const artisanName = document.getElementById('artisanName').value.trim();
+    const startInp = document.getElementById('startTime').value;
+    const fixInp = document.getElementById('fixTime').value;
+    const issue = document.getElementById('issue').value.trim();
+    const start = startInp ? new Date(startInp) : NOW();
+    const fix = fixInp ? new Date(fixInp) : null;
+    const equipType = getType(equip);
+    log.push({equip, equipType, artisanType, artisanName, reason, start, fix, issue});
+    const eqObj = equipment.find(x=>x.id===equip);
+    if(eqObj){ eqObj.status = fix ? eqObj.status : 'breakdown'; persistEquip(); drawBoard(); updateKPI(); }
+    e.target.reset(); renderLog();
+  });
+
+  function persistLog(){ localStorage.setItem('downLog', JSON.stringify(log.map(r=>({ ...r, start:r.start.toISOString(), fix:r.fix?r.fix.toISOString():null })))); }
+
+  document.getElementById('resetBoard').addEventListener('click', ()=>{ equipment.forEach(e=>e.status='production'); persistEquip(); drawBoard(); updateKPI(); });
+  document.getElementById('clearLog').addEventListener('click', ()=>{ if(confirm('Clear entire breakdown log?')){ log.splice(0); persistLog(); renderLog(); } });
+
+  // Init
+  drawBoard(); updateKPI(); renderLog();
+</script>
+</body>
+</html>
